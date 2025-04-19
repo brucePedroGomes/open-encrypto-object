@@ -33,6 +33,9 @@ const myData = {
 
 const encryptedData = encryptJsonObject(myData);
 console.log(encryptedData);
+
+const decryptedData = decryptJsonObject(encryptedData);
+console.log(decryptedData);
 ```
 
 ## Environment Variables
