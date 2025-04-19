@@ -17,7 +17,6 @@ The library provides a function `encryptJsonObject` that recursively encrypts al
 Before using the library, ensure you have set the necessary environment variables: `ENCRYPTION_KEY` and `ENCRYPTION_IV`. These should be 32-byte and 16-byte hex strings respectively.
 
 ```javascript
-const { encryptJsonObject } = require('./src/index'); // Adjust path as needed
 
 // Example usage:
 const myData = {
@@ -55,9 +54,6 @@ console.log('ENCRYPTION_KEY=' + key);
 console.log('ENCRYPTION_IV=' + iv);
 ```
 
-## Development
-
-(Add development instructions here if needed, e.g., running tests)
 ## Recursive JSON Encryptor/Decryptor
 
 This module provides utility functions to recursively encrypt and decrypt primitive values (strings, numbers, booleans, null) within nested JavaScript objects and arrays.
