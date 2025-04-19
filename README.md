@@ -7,7 +7,7 @@ A simple JavaScript library for encrypting primitive values within JSON objects 
 You can install this library using npm:
 
 ```bash
-npm install your-library-name # Replace with the actual package name
+npm install open-encrypto-object
 ```
 
 ## Usage
