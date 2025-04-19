@@ -1,0 +1,27 @@
+{
+  "name": "open-encrypto-object",
+  "version": "1.0.0",
+  "description": "A Node.js module for recursively encrypting and decrypting primitive values within JSON objects and arrays using AES-256-GCM, requiring environment variables for keys.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "mkdir -p dist && cp src/index.js dist/index.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "simple",
+    "library",
+    "npm"
+  ],
+  "author": "Bruce Pedro Gomes <brucegomestech@gmail.com>",
+  "license": "ISC",
+  "devDependencies": {
+    "@babel/core": "^7.23.9",
+    "@babel/preset-env": "^7.23.9",
+    "jest": "^29.7.0"
+  },
+  "babel": {
+    "presets": [
+      "@babel/preset-env"
+    ]
+  }
+}
