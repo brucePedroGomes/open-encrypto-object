@@ -33,10 +33,10 @@ export function initializeEncryptionKeys() {
     const encryptionIvEnv = process.env.ENCRYPTION_IV;
 
     if (!encryptionKeyEnv || !encryptionIvEnv) {
-        console.error("Security Warning: ENCRYPTION_KEY and/or ENCRYPTION_IV environment variables are not set. Encryption will not function.");
+        // Throw an error if essential configuration is missing
         encryptionKey = null;
         encryptionIv = null;
-        return; // Exit if keys are missing
+        throw new Error("Configuration Error: ENCRYPTION_KEY and/or ENCRYPTION_IV environment variables are not set. Cannot proceed.");
     }
 
     try {
@@ -50,9 +50,10 @@ export function initializeEncryptionKeys() {
              throw new Error(`ENCRYPTION_IV must be ${IV_LENGTH_BYTES * 2} hex characters long (${IV_LENGTH_BYTES} bytes). Found length: ${encryptionIv.length}`);
          }
     } catch (error) {
-        console.error(`Error processing encryption key/IV: ${error.message}. Encryption disabled.`);
-        encryptionKey = null; // Prevent use of invalid key/iv
+        // Propagate the error, indicating a critical setup failure
+        encryptionKey = null;
         encryptionIv = null;
+        throw new Error(`Configuration Error processing encryption key/IV: ${error.message}`);
     }
 }
 
@@ -62,15 +63,12 @@ export function initializeEncryptionKeys() {
  * Encrypts a single primitive value.
  *
  * @param {string | number | boolean | null} value The primitive value to encrypt.
- * @returns {string} The base64 encoded encrypted string with the auth tag appended,
- *                   or a specific error string ("ERR_ENC_KEY_IV_MISSING" or "ERR_ENC_FAILED")
- *                   if encryption fails or keys are missing.
+ * @returns {string} The base64 encoded encrypted string with the auth tag appended.
+ * @throws {Error} If encryption keys are missing/invalid or if encryption fails.
  */
 function encryptValue(value) {
     if (!encryptionKey || !encryptionIv) {
-        console.error("Encryption cannot proceed: Key or IV is missing or invalid.");
-        // Return a distinct value indicating failure, easily identifiable during decryption/debugging
-        return "ERR_ENC_KEY_IV_MISSING";
+        throw new Error("Encryption Error: Encryption key or IV is missing or invalid. Initialize keys first.");
     }
 
     // Convert all primitive types to their string representation for consistent encryption
@@ -85,8 +83,8 @@ function encryptValue(value) {
         // This is crucial for GCM integrity checks during decryption.
         return `${encrypted}.${authTag.toString(OUTPUT_ENCODING)}`;
     } catch (error) {
-        console.error(`Encryption error for value "${stringValue.substring(0, 50)}...": ${error.message}`);
-        return "ERR_ENC_FAILED"; // Return a distinct error marker
+        // Propagate the underlying crypto error
+        throw new Error(`Encryption failed for value "${stringValue.substring(0, 50)}...": ${error.message}`);
     }
 }
 
@@ -96,14 +94,12 @@ function encryptValue(value) {
  *
  * @param {any} data The JSON object or array to encrypt.
  * @returns {any} A new object or array with the same structure, but with all primitive values encrypted.
- *          If encryption fails for a value, a specific error string is used.
- *          Returns the original data structure if keys/IVs are missing/invalid globally.
+ * @throws {Error} If encryption keys are missing/invalid or if encryption fails for any value.
  */
 export function encryptJsonObject(data) {
      // If keys are invalid globally, don't attempt encryption at all.
      if (!encryptionKey || !encryptionIv) {
-        console.warn("encryptJsonObject called, but encryption keys are not configured. Returning original data.");
-        return data; // Or potentially throw an error, depending on desired strictness
+        throw new Error("Encryption Error: encryptJsonObject called, but encryption keys are not configured or are invalid.");
     }
 
     if (data === null || typeof data !== 'object') {
@@ -135,12 +131,12 @@ export function encryptJsonObject(data) {
  *
  * @param {string} encryptedString The base64 encoded string potentially containing encrypted data and auth tag.
  * @returns {string | number | boolean | null} The decrypted primitive value, or the original input string
- *                                             if decryption fails, keys are missing, or it doesn't appear encrypted.
+ *                                             if it doesn't appear to be encrypted by this library.
+ * @throws {Error} If decryption keys are missing/invalid or if decryption fails (e.g., invalid auth tag).
  */
 function decryptValue(encryptedString) {
     if (!encryptionKey || !encryptionIv) {
-        console.error("Decryption cannot proceed: Key or IV is missing or invalid.");
-        return encryptedString; // Return original if keys missing
+        throw new Error("Decryption Error: Decryption key or IV is missing or invalid. Initialize keys first.");
     }
 
     // Basic check: If it's not a string or doesn't contain the delimiter, it's likely not encrypted by our method.
@@ -185,8 +181,8 @@ function decryptValue(encryptedString) {
     } catch (error) {
         // Common errors: 'Unsupported state or unable to authenticate data' (invalid auth tag),
         // or Buffer.from errors if authTagBase64 is invalid base64.
-        console.warn(`Decryption error for value "${encryptedString.substring(0, 50)}...": ${error.message}. Returning original value.`);
-        return encryptedString; // Return original string on decryption failure
+        // Propagate the underlying crypto error (e.g., invalid auth tag)
+        throw new Error(`Decryption failed for value "${encryptedString.substring(0, 50)}...": ${error.message}`);
     }
 }
 
@@ -196,14 +192,13 @@ function decryptValue(encryptedString) {
  *
  * @param {any} data The JSON object or array potentially containing encrypted strings.
  * @returns {any} A new object or array with the same structure, but with encrypted strings decrypted.
- *          If decryption fails for a value, the original encrypted string is kept.
- *          Returns the original data structure if keys/IVs are missing/invalid globally.
+ *          Strings that couldn't be decrypted or didn't appear encrypted are returned as is.
+ * @throws {Error} If decryption keys are missing/invalid or if decryption fails for any value.
  */
 export function decryptJsonObject(data) {
     // If keys are invalid globally, don't attempt decryption at all.
     if (!encryptionKey || !encryptionIv) {
-        console.warn("decryptJsonObject called, but encryption keys are not configured. Returning original data.");
-        return data;
+        throw new Error("Decryption Error: decryptJsonObject called, but encryption keys are not configured or are invalid.");
     }
 
     if (data === null || typeof data !== 'object') {

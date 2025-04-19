@@ -6,14 +6,15 @@ const mockTestIv = crypto.randomBytes(16).toString('hex'); // Renamed variable
 
 // Use jest.mock to control the module loading and environment setup
 jest.mock('../src/index', () => {
+  // Set environment variables *before* requiring the actual module.
+  // This ensures the automatic initialization within src/index.js finds the keys.
+  process.env.ENCRYPTION_KEY = mockTestKey;
+  process.env.ENCRYPTION_IV = mockTestIv;
+
   const originalModule = jest.requireActual('../src/index');
 
-  // Set environment variables before initializing keys in the actual module
-  process.env.ENCRYPTION_KEY = mockTestKey; // Use renamed variable
-  process.env.ENCRYPTION_IV = mockTestIv; // Use renamed variable
-
-  // Initialize keys in the actual module
-  originalModule.initializeEncryptionKeys();
+  // No need to explicitly initialize here, as requireActual triggered it.
+  // beforeAll will re-initialize to ensure a clean state for tests.
 
   return originalModule;
 });
@@ -28,16 +29,17 @@ describe('encryptJsonObject', () => {
   beforeAll(() => {
     // Save original environment variables
     originalEnv = process.env;
-    // The jest.mock block above handles setting the test environment variables
-    // and initializing the keys for the initial module load.
-    // No need to re-set or re-initialize here for the primary test cases.
+    // Set environment variables for testing
+    process.env.ENCRYPTION_KEY = mockTestKey;
+    process.env.ENCRYPTION_IV = mockTestIv;
+    // Initialize keys using the test environment variables
+    initializeEncryptionKeys();
   });
 
   afterAll(() => {
     // Restore original environment variables
     process.env = originalEnv;
-    // Re-initialize keys with original environment variables for subsequent tests if any
-    initializeEncryptionKeys();
+    // No need to re-initialize keys here after restoring original env
   });
 
   test('should encrypt primitive values in a flat object', () => {
@@ -168,34 +170,36 @@ describe('encryptJsonObject', () => {
     expect(encryptedData[1][2].flag).toContain('.');
   });
 
-  test('should return original data if ENCRYPTION_KEY is missing', () => {
+  test('should throw error if ENCRYPTION_KEY is missing', () => {
     // Temporarily unset key and re-initialize for this test
     const currentKey = process.env.ENCRYPTION_KEY;
     process.env.ENCRYPTION_KEY = '';
-    initializeEncryptionKeys();
+    // This call will internally set encryptionKey to null and throw, but we catch the subsequent error
+    try { initializeEncryptionKeys(); } catch (e) { /* Ignore initialization error */ }
 
     const data = { value: 'test' };
-    const encryptedData = encryptJsonObject(data);
-    expect(encryptedData).toEqual(data); // Should return original data
+    // Expect the main function to throw because keys are null internally
+    expect(() => encryptJsonObject(data)).toThrow('Encryption Error: encryptJsonObject called, but encryption keys are not configured or are invalid.');
 
     // Restore key and re-initialize for subsequent tests
     process.env.ENCRYPTION_KEY = currentKey;
-    initializeEncryptionKeys();
+    initializeEncryptionKeys(); // Re-initialize with valid key
   });
 
-  test('should return original data if ENCRYPTION_IV is missing', () => {
+  test('should throw error if ENCRYPTION_IV is missing', () => {
     // Temporarily unset IV and re-initialize for this test
     const currentIv = process.env.ENCRYPTION_IV;
     process.env.ENCRYPTION_IV = '';
-    initializeEncryptionKeys();
+    // This call will internally set encryptionIv to null and throw, but we catch the subsequent error
+    try { initializeEncryptionKeys(); } catch (e) { /* Ignore initialization error */ }
 
     const data = { value: 'test' };
-    const encryptedData = encryptJsonObject(data);
-    expect(encryptedData).toEqual(data); // Should return original data
+    // Expect the main function to throw because keys are null internally
+    expect(() => encryptJsonObject(data)).toThrow('Encryption Error: encryptJsonObject called, but encryption keys are not configured or are invalid.');
 
     // Restore IV and re-initialize for subsequent tests
     process.env.ENCRYPTION_IV = currentIv;
-    initializeEncryptionKeys();
+    initializeEncryptionKeys(); // Re-initialize with valid IV
   });
 
   test('should handle empty object', () => {
@@ -324,40 +328,40 @@ describe('decryptJsonObject', () => {
   });
 
 
-  test('should return original data if ENCRYPTION_KEY is missing', () => {
+  test('should throw error if ENCRYPTION_KEY is missing during decryption', () => {
     const originalData = { value: 'test' };
     const encryptedData = encryptJsonObject(originalData); // Encrypt with valid keys first
 
     // Temporarily unset key and re-initialize for this test
     const currentKey = process.env.ENCRYPTION_KEY;
     process.env.ENCRYPTION_KEY = '';
-    initializeEncryptionKeys(); // Re-initialize with missing key
+    // This call will internally set encryptionKey to null and throw, but we catch the subsequent error
+    try { initializeEncryptionKeys(); } catch (e) { /* Ignore initialization error */ }
 
-    const decryptedData = decryptJsonObject(encryptedData);
-    // When keys are missing, decrypt should return the input data as is
-    expect(decryptedData).toEqual(encryptedData);
+    // Expect the main function to throw because keys are null internally
+    expect(() => decryptJsonObject(encryptedData)).toThrow('Decryption Error: decryptJsonObject called, but encryption keys are not configured or are invalid.');
 
     // Restore key and re-initialize for subsequent tests
     process.env.ENCRYPTION_KEY = currentKey;
-    initializeEncryptionKeys();
+    initializeEncryptionKeys(); // Re-initialize with valid key
   });
 
-  test('should return original data if ENCRYPTION_IV is missing', () => {
+  test('should throw error if ENCRYPTION_IV is missing during decryption', () => {
     const originalData = { value: 'test' };
     const encryptedData = encryptJsonObject(originalData); // Encrypt with valid keys first
 
     // Temporarily unset IV and re-initialize for this test
     const currentIv = process.env.ENCRYPTION_IV;
     process.env.ENCRYPTION_IV = '';
-    initializeEncryptionKeys(); // Re-initialize with missing IV
+    // This call will internally set encryptionIv to null and throw, but we catch the subsequent error
+    try { initializeEncryptionKeys(); } catch (e) { /* Ignore initialization error */ }
 
-    const decryptedData = decryptJsonObject(encryptedData);
-     // When keys are missing, decrypt should return the input data as is
-    expect(decryptedData).toEqual(encryptedData);
+    // Expect the main function to throw because keys are null internally
+    expect(() => decryptJsonObject(encryptedData)).toThrow('Decryption Error: decryptJsonObject called, but encryption keys are not configured or are invalid.');
 
     // Restore IV and re-initialize for subsequent tests
     process.env.ENCRYPTION_IV = currentIv;
-    initializeEncryptionKeys();
+    initializeEncryptionKeys(); // Re-initialize with valid IV
   });
 
   test('should return original data if input strings are not actually encrypted', () => {
