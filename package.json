@@ -1,6 +1,6 @@
 {
   "name": "open-encrypto-object",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A Node.js module for recursively encrypting and decrypting primitive values within JSON objects and arrays using AES-256-GCM, requiring environment variables for keys.",
   "main": "dist/index.js",
   "repository": {
