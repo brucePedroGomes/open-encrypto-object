@@ -4,41 +4,25 @@ const crypto = require('crypto');
 const mockTestKey = crypto.randomBytes(32).toString('hex'); // Renamed variable
 const mockTestIv = crypto.randomBytes(16).toString('hex'); // Renamed variable
 
-// Use jest.mock to control the module loading and environment setup
-jest.mock('../src/index', () => {
-  const originalModule = jest.requireActual('../src/index');
+// Import the service class
+const { EncryptoService } = require('../src/index');
 
-  // Set environment variables before initializing keys in the actual module
-  process.env.ENCRYPTION_KEY = mockTestKey; // Use renamed variable
-  process.env.ENCRYPTION_IV = mockTestIv; // Use renamed variable
+// Instantiate the service once for all tests
+let encryptoService;
 
-  // Initialize keys in the actual module
-  originalModule.initializeEncryptionKeys();
-
-  return originalModule;
-});
-
-// Require the mocked module after the mock is defined
-const { encryptJsonObject, decryptJsonObject, initializeEncryptionKeys } = require('../src/index');
+try {
+  encryptoService = new EncryptoService(mockTestKey, mockTestIv);
+} catch (error) {
+  console.error("Failed to initialize EncryptoService in tests:", error);
+  // If initialization fails, tests depending on it will likely fail,
+  // which is the desired outcome in this scenario.
+  // We might throw here to halt tests if initialization is critical.
+  throw new Error(`Test setup failed: Could not instantiate EncryptoService - ${error.message}`);
+}
 
 
 describe('encryptJsonObject', () => {
-  let originalEnv;
-
-  beforeAll(() => {
-    // Save original environment variables
-    originalEnv = process.env;
-    // The jest.mock block above handles setting the test environment variables
-    // and initializing the keys for the initial module load.
-    // No need to re-set or re-initialize here for the primary test cases.
-  });
-
-  afterAll(() => {
-    // Restore original environment variables
-    process.env = originalEnv;
-    // Re-initialize keys with original environment variables for subsequent tests if any
-    initializeEncryptionKeys();
-  });
+  // Service is instantiated above, no need for beforeAll/afterAll for env vars/init
 
   test('should encrypt primitive values in a flat object', () => {
     const data = {
@@ -52,9 +36,9 @@ describe('encryptJsonObject', () => {
       }
     };
 
-    const encryptedData = encryptJsonObject(data);
+    const encryptedData = encryptoService.encryptJsonObject(data);
 
-    console.log({data, encryptedData, mockTestKey, mockTestIv })
+    // console.log({data, encryptedData, mockTestKey, mockTestIv }) // Keep console log commented out unless debugging
 
     expect(typeof encryptedData.name).toBe('string');
     expect(encryptedData.name).not.toBe(data.name);
@@ -89,7 +73,7 @@ describe('encryptJsonObject', () => {
       id: 100,
     };
 
-    const encryptedData = encryptJsonObject(data);
+    const encryptedData = encryptoService.encryptJsonObject(data);
 
     expect(typeof encryptedData.user.name).toBe('string');
     expect(encryptedData.user.name).not.toBe(data.user.name);
@@ -111,7 +95,7 @@ describe('encryptJsonObject', () => {
   test('should encrypt primitive values in an array', () => {
     const data = ['item1', 2, true, null];
 
-    const encryptedData = encryptJsonObject(data);
+    const encryptedData = encryptoService.encryptJsonObject(data);
 
     expect(Array.isArray(encryptedData)).toBe(true);
     expect(encryptedData.length).toBe(data.length);
@@ -139,7 +123,7 @@ describe('encryptJsonObject', () => {
       ['b', 3, { flag: true }],
     ];
 
-    const encryptedData = encryptJsonObject(data);
+    const encryptedData = encryptoService.encryptJsonObject(data);
 
     expect(Array.isArray(encryptedData)).toBe(true);
     expect(encryptedData.length).toBe(data.length);
@@ -168,70 +152,43 @@ describe('encryptJsonObject', () => {
     expect(encryptedData[1][2].flag).toContain('.');
   });
 
-  test('should return original data if ENCRYPTION_KEY is missing', () => {
-    // Temporarily unset key and re-initialize for this test
-    const currentKey = process.env.ENCRYPTION_KEY;
-    process.env.ENCRYPTION_KEY = '';
-    initializeEncryptionKeys();
-
-    const data = { value: 'test' };
-    const encryptedData = encryptJsonObject(data);
-    expect(encryptedData).toEqual(data); // Should return original data
-
-    // Restore key and re-initialize for subsequent tests
-    process.env.ENCRYPTION_KEY = currentKey;
-    initializeEncryptionKeys();
-  });
-
-  test('should return original data if ENCRYPTION_IV is missing', () => {
-    // Temporarily unset IV and re-initialize for this test
-    const currentIv = process.env.ENCRYPTION_IV;
-    process.env.ENCRYPTION_IV = '';
-    initializeEncryptionKeys();
-
-    const data = { value: 'test' };
-    const encryptedData = encryptJsonObject(data);
-    expect(encryptedData).toEqual(data); // Should return original data
-
-    // Restore IV and re-initialize for subsequent tests
-    process.env.ENCRYPTION_IV = currentIv;
-    initializeEncryptionKeys();
-  });
+  // Removed tests for missing ENV VARS as initialization is now via constructor
+  // The constructor itself throws errors for invalid keys/IVs, which could be tested separately if needed.
 
   test('should handle empty object', () => {
     const data = {};
-    const encryptedData = encryptJsonObject(data);
+    const encryptedData = encryptoService.encryptJsonObject(data);
     expect(encryptedData).toEqual({});
   });
 
   test('should handle empty array', () => {
     const data = [];
-    const encryptedData = encryptJsonObject(data);
+    const encryptedData = encryptoService.encryptJsonObject(data);
     expect(encryptedData).toEqual([]);
   });
 
   test('should handle null input', () => {
     const data = null;
-    const encryptedData = encryptJsonObject(data);
+    const encryptedData = encryptoService.encryptJsonObject(data);
     expect(typeof encryptedData).toBe('string');
-    expect(encryptedData).toContain('.');
+    expect(encryptedData).toContain('.'); // Null becomes an encrypted string
   });
 
   test('should handle primitive input directly', () => {
     const dataString = 'just a string';
-    const encryptedString = encryptJsonObject(dataString);
+    const encryptedString = encryptoService.encryptJsonObject(dataString);
     expect(typeof encryptedString).toBe('string');
     expect(encryptedString).not.toBe(dataString);
     expect(encryptedString).toContain('.');
 
     const dataNumber = 123;
-    const encryptedNumber = encryptJsonObject(dataNumber);
+    const encryptedNumber = encryptoService.encryptJsonObject(dataNumber);
     expect(typeof encryptedNumber).toBe('string');
     expect(encryptedNumber).not.toBe(String(dataNumber));
     expect(encryptedNumber).toContain('.');
 
     const dataBoolean = false;
-    const encryptedBoolean = encryptJsonObject(dataBoolean);
+    const encryptedBoolean = encryptoService.encryptJsonObject(dataBoolean);
     expect(typeof encryptedBoolean).toBe('string');
     expect(encryptedBoolean).not.toBe(String(dataBoolean));
     expect(encryptedBoolean).toContain('.');
@@ -249,9 +206,9 @@ describe('decryptJsonObject', () => {
       balance: 123.45,
       isNull: null,
     };
-    const encryptedData = encryptJsonObject(originalData);
-    const decryptedData = decryptJsonObject(encryptedData);
-    console.log({originalData, encryptedData, decryptedData})
+    const encryptedData = encryptoService.encryptJsonObject(originalData);
+    const decryptedData = encryptoService.decryptJsonObject(encryptedData);
+    // console.log({originalData, encryptedData, decryptedData}) // Keep commented out
     expect(decryptedData).toEqual(originalData);
   });
 
@@ -266,8 +223,8 @@ describe('decryptJsonObject', () => {
       },
       id: 100,
     };
-    const encryptedData = encryptJsonObject(originalData);
-    const decryptedData = decryptJsonObject(encryptedData);
+    const encryptedData = encryptoService.encryptJsonObject(originalData);
+    const decryptedData = encryptoService.decryptJsonObject(encryptedData);
     expect(decryptedData).toEqual(originalData);
   });
 
@@ -279,15 +236,15 @@ describe('decryptJsonObject', () => {
         ['b', 3, { flag: true }],
       ],
     };
-    const encryptedData = encryptJsonObject(originalData);
-    const decryptedData = decryptJsonObject(encryptedData);
+    const encryptedData = encryptoService.encryptJsonObject(originalData);
+    const decryptedData = encryptoService.decryptJsonObject(encryptedData);
     expect(decryptedData).toEqual(originalData);
   });
 
    test('should decrypt primitive values within arrays directly', () => {
     const originalData = ['item1', 2, true, null, { nested: 'value' }];
-    const encryptedData = encryptJsonObject(originalData);
-    const decryptedData = decryptJsonObject(encryptedData);
+    const encryptedData = encryptoService.encryptJsonObject(originalData);
+    const decryptedData = encryptoService.decryptJsonObject(encryptedData);
     expect(decryptedData).toEqual(originalData);
   });
 
@@ -300,9 +257,9 @@ describe('decryptJsonObject', () => {
         alsoSecret: true
       }
     };
-    // Encrypt only the parts that need encryption
-    const encryptedSecret = encryptJsonObject(originalData.secret);
-    const encryptedNestedSecret = encryptJsonObject(originalData.nested.alsoSecret);
+    // Encrypt only the parts that need encryption using the service instance
+    const encryptedSecret = encryptoService.encryptJsonObject(originalData.secret);
+    const encryptedNestedSecret = encryptoService.encryptJsonObject(originalData.nested.alsoSecret);
 
 
     const mixedData = {
@@ -314,7 +271,7 @@ describe('decryptJsonObject', () => {
       }
     };
 
-    const decryptedData = decryptJsonObject(mixedData);
+    const decryptedData = encryptoService.decryptJsonObject(mixedData);
     // We expect the decrypted data to match the original structure and values
     expect(decryptedData).toEqual(originalData);
     expect(decryptedData.plain).toBe(originalData.plain);
@@ -324,41 +281,8 @@ describe('decryptJsonObject', () => {
   });
 
 
-  test('should return original data if ENCRYPTION_KEY is missing', () => {
-    const originalData = { value: 'test' };
-    const encryptedData = encryptJsonObject(originalData); // Encrypt with valid keys first
+  // Removed tests for missing ENV VARS during decryption as initialization is now via constructor
 
-    // Temporarily unset key and re-initialize for this test
-    const currentKey = process.env.ENCRYPTION_KEY;
-    process.env.ENCRYPTION_KEY = '';
-    initializeEncryptionKeys(); // Re-initialize with missing key
-
-    const decryptedData = decryptJsonObject(encryptedData);
-    // When keys are missing, decrypt should return the input data as is
-    expect(decryptedData).toEqual(encryptedData);
-
-    // Restore key and re-initialize for subsequent tests
-    process.env.ENCRYPTION_KEY = currentKey;
-    initializeEncryptionKeys();
-  });
-
-  test('should return original data if ENCRYPTION_IV is missing', () => {
-    const originalData = { value: 'test' };
-    const encryptedData = encryptJsonObject(originalData); // Encrypt with valid keys first
-
-    // Temporarily unset IV and re-initialize for this test
-    const currentIv = process.env.ENCRYPTION_IV;
-    process.env.ENCRYPTION_IV = '';
-    initializeEncryptionKeys(); // Re-initialize with missing IV
-
-    const decryptedData = decryptJsonObject(encryptedData);
-     // When keys are missing, decrypt should return the input data as is
-    expect(decryptedData).toEqual(encryptedData);
-
-    // Restore IV and re-initialize for subsequent tests
-    process.env.ENCRYPTION_IV = currentIv;
-    initializeEncryptionKeys();
-  });
 
   test('should return original data if input strings are not actually encrypted', () => {
     const data = {
@@ -370,54 +294,54 @@ describe('decryptJsonObject', () => {
       },
       tags: ['tag1', 'tag2'] // Plain strings in array
     };
-    const decryptedData = decryptJsonObject(data);
+    const decryptedData = encryptoService.decryptJsonObject(data);
     // decryptJsonObject should leave non-encrypted strings and other types untouched
     expect(decryptedData).toEqual(data);
   });
 
   test('should handle empty object', () => {
     const data = {};
-    const decryptedData = decryptJsonObject(data);
+    const decryptedData = encryptoService.decryptJsonObject(data);
     expect(decryptedData).toEqual({});
   });
 
   test('should handle empty array', () => {
     const data = [];
-    const decryptedData = decryptJsonObject(data);
+    const decryptedData = encryptoService.decryptJsonObject(data);
     expect(decryptedData).toEqual([]);
   });
 
   test('should handle null input', () => {
     const data = null;
-    const decryptedData = decryptJsonObject(data);
+    const decryptedData = encryptoService.decryptJsonObject(data);
     // decryptJsonObject returns null directly if input is null
     expect(decryptedData).toBeNull();
   });
 
   test('should handle primitive inputs (non-strings)', () => {
     // decryptJsonObject returns non-object, non-string primitives directly
-    expect(decryptJsonObject(123)).toBe(123);
-    expect(decryptJsonObject(true)).toBe(true);
-    expect(decryptJsonObject(false)).toBe(false);
-    expect(decryptJsonObject(undefined)).toBeUndefined();
+    expect(encryptoService.decryptJsonObject(123)).toBe(123);
+    expect(encryptoService.decryptJsonObject(true)).toBe(true);
+    expect(encryptoService.decryptJsonObject(false)).toBe(false);
+    expect(encryptoService.decryptJsonObject(undefined)).toBeUndefined();
   });
 
   test('should handle primitive string input that is not encrypted', () => {
     const plainString = "this is just a plain string";
     // decryptJsonObject calls decryptValue, which returns the original string if not encrypted format
-    expect(decryptJsonObject(plainString)).toBe(plainString);
+    expect(encryptoService.decryptJsonObject(plainString)).toBe(plainString);
   });
 
   test('should handle primitive string input that IS encrypted', () => {
     const originalString = "this will be encrypted";
     // Use encryptJsonObject which handles primitives by calling encryptValue
-    const encryptedString = encryptJsonObject(originalString);
+    const encryptedString = encryptoService.encryptJsonObject(originalString);
     expect(typeof encryptedString).toBe('string');
     expect(encryptedString).not.toBe(originalString);
     expect(encryptedString).toContain('.'); // Ensure it looks encrypted
 
     // Use decryptJsonObject which handles primitives by calling decryptValue
-    const decryptedString = decryptJsonObject(encryptedString);
+    const decryptedString = encryptoService.decryptJsonObject(encryptedString);
     expect(decryptedString).toBe(originalString);
   });
 
