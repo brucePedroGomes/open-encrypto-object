@@ -1,6 +1,6 @@
 # open-encrypto-object
 
-A simple JavaScript library for recursively encrypting primitive values within JSON objects and arrays using AES-256-GCM, preserving the structure.
+A JavaScript library for recursively encrypting primitive values within JSON objects and arrays using AES-256-GCM, preserving the structure.
 
 ## Installation
 
