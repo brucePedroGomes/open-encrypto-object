@@ -18,14 +18,15 @@ This library provides an `EncryptoService` class to handle encryption and decryp
 // Import the EncryptoService class
 const { EncryptoService } = require('open-encrypto-object');
 
-// Define your secure encryption key and initialization vector (IV)
-// These MUST be kept secret and secure. Generate them using a secure method.
-// See the "Generating Key and IV" section below.
+// Define your secure encryption key.
+// This MUST be kept secret and secure. Generate it using a secure method.
+// See the "Generating the Key" section below.
 const keyHex = 'YOUR_64_CHAR_HEX_KEY'; // Replace with your actual 32-byte hex-encoded key
-const ivHex = 'YOUR_32_CHAR_HEX_IV';   // Replace with your actual 16-byte hex-encoded IV
 
-// Instantiate the service
-const encryptoService = new EncryptoService(keyHex, ivHex);
+// Instantiate the service. A fresh random IV is generated per value internally,
+// so you no longer pass an IV. (A second `ivHex` argument is still accepted, but
+// only to decrypt legacy data produced by versions < 2.0.0.)
+const encryptoService = new EncryptoService(keyHex);
 
 // Define some sample data
 const originalData = {
@@ -43,16 +44,18 @@ try {
   const encryptedData = encryptoService.encryptJsonObject(originalData);
 
   // Encrypted data preserves the structure, but primitive values are replaced
-  // with strings containing the encrypted data and an authentication tag.
+  // with strings of the form `iv.ciphertext.authTag` (all base64). A unique random
+  // IV is embedded per value, so encrypting the same value twice yields different
+  // ciphertexts.
   // Example structure:
   // {
-  //   userId: 'encryptedBase64String.authTagBase64String',
-  //   userName: 'encryptedBase64String.authTagBase64String',
+  //   userId: 'ivBase64.encryptedBase64String.authTagBase64String',
+  //   userName: 'ivBase64.encryptedBase64String.authTagBase64String',
   //   settings: {
-  //     theme: 'encryptedBase64String.authTagBase64String',
-  //     notifications: 'encryptedBase64String.authTagBase64String'
+  //     theme: 'ivBase64.encryptedBase64String.authTagBase64String',
+  //     notifications: 'ivBase64.encryptedBase64String.authTagBase64String'
   //   },
-  //   tags: [ 'encryptedBase64String.authTagBase64String', 'encryptedBase64String.authTagBase64String' ]
+  //   tags: [ 'ivBase64.encryptedBase64String.authTagBase64String', 'ivBase64.encryptedBase64String.authTagBase64String' ]
   // }
   console.log('Encrypted:', JSON.stringify(encryptedData, null, 2));
 
@@ -77,9 +80,9 @@ try {
 *   **Data Integrity:** GCM mode provides authentication, ensuring that the encrypted data hasn't been tampered with.
 *   **Preserves Structure:** Encrypts only the primitive values, keeping the original object and array structure intact for easier use after decryption.
 
-## Generating Key and IV
+## Generating the Key
 
-You need a secure 32-byte (64 hex characters) key and a 16-byte (32 hex characters) IV to use `EncryptoService`. You can generate these using Node.js's built-in `crypto` module:
+You need a secure 32-byte (64 hex characters) key to use `EncryptoService`. The IV is generated automatically per value, so you do not need to manage one. You can generate a key using Node.js's built-in `crypto` module:
 
 ```javascript
 const crypto = require('crypto');
@@ -87,15 +90,15 @@ const crypto = require('crypto');
 // Generate a 32-byte key for AES-256
 const key = crypto.randomBytes(32).toString('hex');
 
-// Generate a 16-byte IV for GCM (AES-GCM standard)
-const iv = crypto.randomBytes(16).toString('hex');
-
 console.log('Generated Key (Hex):', key);
-console.log('Generated IV (Hex):', iv);
-console.log('\nStore these securely! Do not commit them to version control.');
+console.log('\nStore this securely! Do not commit it to version control.');
 ```
 
-**Important:** Store your generated key and IV securely. Do not hardcode them directly in your source code if possible, and never commit them to version control. Use environment variables, secret management systems, or other secure methods appropriate for your application.
+**Important:** Store your generated key securely. Do not hardcode it directly in your source code if possible, and never commit it to version control. Use environment variables, secret management systems, or other secure methods appropriate for your application.
+
+## Security note on IVs
+
+Versions **< 2.0.0** required a fixed IV that was reused for every encrypted value. Under AES-GCM, reusing a `(key, IV)` pair is insecure — it makes encryption deterministic (leaking which values are equal) and undermines the authentication guarantee. Since **2.0.0**, a fresh cryptographically random IV is generated for each value and embedded in the output (`iv.ciphertext.authTag`). Legacy 2-part payloads can still be decrypted by passing the original `ivHex` as the second constructor argument.
 
 ## License
 

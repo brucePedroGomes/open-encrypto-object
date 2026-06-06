@@ -155,6 +155,44 @@ describe('encryptJsonObject', () => {
   // Removed tests for missing ENV VARS as initialization is now via constructor
   // The constructor itself throws errors for invalid keys/IVs, which could be tested separately if needed.
 
+  test('should use a fresh random IV per value (non-deterministic ciphertext)', () => {
+    // Regression test for issue #3: AES-GCM nonce reuse.
+    const a = encryptoService.encryptJsonObject('user@example.com');
+    const b = encryptoService.encryptJsonObject('user@example.com');
+    expect(a).not.toBe(b); // identical plaintext -> different ciphertext
+
+    // Equal values inside the same object must not produce equal ciphertexts.
+    const enc = encryptoService.encryptJsonObject({ alice: 'SECRET', carol: 'SECRET' });
+    expect(enc.alice).not.toBe(enc.carol);
+
+    // Both still round-trip correctly.
+    expect(encryptoService.decryptJsonObject(a)).toBe('user@example.com');
+    expect(encryptoService.decryptJsonObject(enc)).toEqual({ alice: 'SECRET', carol: 'SECRET' });
+
+    // New payload carries the IV as a third segment.
+    expect(a.split('.').length).toBe(3);
+  });
+
+  test('should not require an IV in the constructor', () => {
+    // IV is now generated per value; constructor must work with key only.
+    expect(() => new EncryptoService(mockTestKey)).not.toThrow();
+    const keyOnly = new EncryptoService(mockTestKey);
+    const enc = keyOnly.encryptJsonObject('hello');
+    expect(keyOnly.decryptJsonObject(enc)).toBe('hello');
+  });
+
+  test('should still decrypt legacy 2-part payloads using the instance IV', () => {
+    // Simulate a payload produced by the old fixed-IV implementation.
+    const legacyService = new EncryptoService(mockTestKey, mockTestIv);
+    const legacyIv = Buffer.from(mockTestIv, 'hex');
+    const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(mockTestKey, 'hex'), legacyIv);
+    let enc = cipher.update('legacy-value', 'utf8', 'base64');
+    enc += cipher.final('base64');
+    const legacyPayload = `${enc}.${cipher.getAuthTag().toString('base64')}`;
+    expect(legacyPayload.split('.').length).toBe(2);
+    expect(legacyService.decryptJsonObject(legacyPayload)).toBe('legacy-value');
+  });
+
   test('should handle empty object', () => {
     const data = {};
     const encryptedData = encryptoService.encryptJsonObject(data);

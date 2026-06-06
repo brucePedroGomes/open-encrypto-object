@@ -18,15 +18,14 @@ export class EncryptoService {
     /**
      * Creates an instance of EncryptoService.
      * @param {string} keyHex The encryption key, hex encoded (must be 64 hex characters, representing 32 bytes).
-     * @param {string} ivHex The initialization vector, hex encoded (must be 32 hex characters, representing 16 bytes).
-     * @throws {Error} If the key or IV is missing, not a string, or has an invalid length.
+     * @param {string} [ivHex] Optional, DEPRECATED. A hex encoded IV (32 hex characters / 16 bytes).
+     *        Encryption no longer uses this value — a fresh random IV is generated per value.
+     *        It is only honoured to decrypt legacy payloads produced before per-value IVs.
+     * @throws {Error} If the key is missing/invalid, or if a provided ivHex has an invalid length.
      */
     constructor(keyHex, ivHex) {
         if (!keyHex || typeof keyHex !== 'string') {
             throw new Error("Configuration Error: Encryption key (keyHex) must be provided as a non-empty string.");
-        }
-        if (!ivHex || typeof ivHex !== 'string') {
-            throw new Error("Configuration Error: Initialization vector (ivHex) must be provided as a non-empty string.");
         }
 
         try {
@@ -36,11 +35,17 @@ export class EncryptoService {
             }
             this.#encryptionKey = key;
 
-            const iv = Buffer.from(ivHex, 'hex');
-            if (iv.length !== IV_LENGTH_BYTES) {
-                throw new Error(`Invalid IV length. IV must be ${IV_LENGTH_BYTES} bytes (${IV_LENGTH_BYTES * 2} hex characters). Received ${iv.length} bytes.`);
+            // ivHex is optional and only retained for backward-compatible decryption.
+            if (ivHex !== undefined && ivHex !== null && ivHex !== '') {
+                if (typeof ivHex !== 'string') {
+                    throw new Error("Initialization vector (ivHex), when provided, must be a string.");
+                }
+                const iv = Buffer.from(ivHex, 'hex');
+                if (iv.length !== IV_LENGTH_BYTES) {
+                    throw new Error(`Invalid IV length. IV must be ${IV_LENGTH_BYTES} bytes (${IV_LENGTH_BYTES * 2} hex characters). Received ${iv.length} bytes.`);
+                }
+                this.#encryptionIv = iv;
             }
-            this.#encryptionIv = iv;
         } catch (error) {
             // Catch errors from Buffer.from (e.g., invalid hex) or length checks
             throw new Error(`Configuration Error processing encryption key/IV: ${error.message}`);
@@ -50,21 +55,29 @@ export class EncryptoService {
     /**
      * Encrypts a single primitive value. (Private helper method)
      *
+     * A fresh, cryptographically random IV is generated for every value. Reusing a
+     * (key, IV) pair under AES-GCM is catastrophic: it makes encryption deterministic
+     * (leaking which plaintexts are equal) and leaks the GCM authentication subkey,
+     * allowing ciphertext forgery. The IV is therefore embedded in the output payload
+     * as the first segment so it can be recovered at decryption time.
+     *
      * @param {string | number | boolean | null} value The primitive value to encrypt.
-     * @returns {string} The base64 encoded encrypted string with the auth tag appended.
+     * @returns {string} The base64 encoded payload in the form `iv.ciphertext.authTag`.
      * @throws {Error} If encryption fails.
      */
     #encryptValue(value) {
-        // Key/IV presence is guaranteed by the constructor
+        // Key presence is guaranteed by the constructor
         const stringValue = String(value); // Convert all primitives to string
 
         try {
-            const cipher = crypto.createCipheriv(ALGORITHM, this.#encryptionKey, this.#encryptionIv);
+            // A unique IV per value is required for AES-GCM security.
+            const iv = crypto.randomBytes(IV_LENGTH_BYTES);
+            const cipher = crypto.createCipheriv(ALGORITHM, this.#encryptionKey, iv);
             let encrypted = cipher.update(stringValue, INPUT_ENCODING, OUTPUT_ENCODING);
             encrypted += cipher.final(OUTPUT_ENCODING);
             const authTag = cipher.getAuthTag();
-            // Append auth tag (base64) separated by a delimiter
-            return `${encrypted}.${authTag.toString(OUTPUT_ENCODING)}`;
+            // Payload layout: iv.ciphertext.authTag (all base64; base64 never contains '.')
+            return `${iv.toString(OUTPUT_ENCODING)}.${encrypted}.${authTag.toString(OUTPUT_ENCODING)}`;
         } catch (error) {
             throw new Error(`Encryption failed for value "${stringValue.substring(0, 50)}...": ${error.message}`);
         }
@@ -116,17 +129,40 @@ export class EncryptoService {
         }
 
         const parts = encryptedString.split('.');
-        if (parts.length !== 2) {
-            // Doesn't fit the expected format 'encryptedData.authTag'
+
+        // Two supported layouts:
+        //   3 parts -> `iv.ciphertext.authTag`  (current: per-value random IV)
+        //   2 parts -> `ciphertext.authTag`     (legacy: fixed instance IV, for backward compat)
+        let iv;
+        let encryptedData;
+        let authTagBase64;
+
+        if (parts.length === 3) {
+            iv = Buffer.from(parts[0], OUTPUT_ENCODING);
+            // Structural guard: a real payload has a full-length IV. If the first
+            // segment doesn't decode to one, this is just a plain string that happens
+            // to contain dots, so leave it untouched.
+            if (iv.length !== IV_LENGTH_BYTES) {
+                return encryptedString;
+            }
+            encryptedData = parts[1];
+            authTagBase64 = parts[2];
+        } else if (parts.length === 2) {
+            // Legacy payload predating per-value IVs; fall back to the instance IV if present.
+            if (!this.#encryptionIv) {
+                return encryptedString;
+            }
+            iv = this.#encryptionIv;
+            encryptedData = parts[0];
+            authTagBase64 = parts[1];
+        } else {
+            // Doesn't fit any known format.
             return encryptedString;
         }
 
-        const encryptedData = parts[0];
-        const authTagBase64 = parts[1];
-
         try {
             const authTag = Buffer.from(authTagBase64, OUTPUT_ENCODING);
-            const decipher = crypto.createDecipheriv(ALGORITHM, this.#encryptionKey, this.#encryptionIv);
+            const decipher = crypto.createDecipheriv(ALGORITHM, this.#encryptionKey, iv);
 
             decipher.setAuthTag(authTag); // Set auth tag for GCM verification
 
